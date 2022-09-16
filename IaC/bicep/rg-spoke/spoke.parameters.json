@@ -10,6 +10,9 @@
         },
         "clusterVnetAddressSpace": {
             "value": "10.240.0.0/16"
+        },
+        "domainName": {
+            "value": "contoso.com"
         }
     }
 }

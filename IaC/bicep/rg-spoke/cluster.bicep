@@ -48,9 +48,6 @@ param clusterAuthorizedIPRanges array = []
 param location string
 param kubernetesVersion string
 
-@description('Domain name to use for App Gateway and AKS ingress.')
-param domainName string
-
 @description('Your cluster will be bootstrapped from this git repo.')
 @minLength(9)
 param gitOpsBootstrappingRepoHttpsUrl string
@@ -79,7 +76,6 @@ var clusterIngressSubnetName = 'snet-clusteringressservices'
 var vnetNodePoolSubnetResourceId = '${targetVnetResourceId}/subnets/${clusterNodesSubnetName}'
 // var vnetIngressServicesSubnetResourceId = '${targetVnetResourceId}/subnets/snet-cluster-ingressservices'
 var clusterControlPlaneIdentityName = 'mi-${clusterName}-controlplane'
-var keyVaultName = 'kv-${clusterName}'
 var isUsingAzureRBACasKubernetesRBAC = (subscription().tenantId == k8sControlPlaneAuthorizationTenantId)
 
 resource rg 'Microsoft.Resources/resourceGroups@2019-05-01' existing = {
