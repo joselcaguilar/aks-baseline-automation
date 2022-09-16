@@ -78,22 +78,12 @@ var clusterNodesSubnetName = 'snet-clusternodes'
 var clusterIngressSubnetName = 'snet-clusteringressservices'
 var vnetNodePoolSubnetResourceId = '${targetVnetResourceId}/subnets/${clusterNodesSubnetName}'
 // var vnetIngressServicesSubnetResourceId = '${targetVnetResourceId}/subnets/snet-cluster-ingressservices'
-var agwName = 'apw-${clusterName}'
-var akvPrivateDnsZonesName = 'privatelink.vaultcore.azure.net'
 var clusterControlPlaneIdentityName = 'mi-${clusterName}-controlplane'
 var keyVaultName = 'kv-${clusterName}'
-var aksIngressDomainName = 'aks-ingress.${domainName}'
-var aksBackendDomainName = 'bu0001a0008-00.${aksIngressDomainName}'
 var isUsingAzureRBACasKubernetesRBAC = (subscription().tenantId == k8sControlPlaneAuthorizationTenantId)
-param appGatewayListenerCertificate string
-param aksIngressControllerCertificate string
 
-module rg '../CARML/Microsoft.Resources/resourceGroups/deploy.bicep' = {
+resource rg 'Microsoft.Resources/resourceGroups@2019-05-01' existing = {
   name: resourceGroupName
-  params: {
-    name: resourceGroupName
-    location: location
-  }
 }
 
 resource acr 'Microsoft.ContainerRegistry/registries@2021-09-01' existing = {
@@ -101,18 +91,10 @@ resource acr 'Microsoft.ContainerRegistry/registries@2021-09-01' existing = {
   name: defaultAcrName
 }
 
-// module akvCertFrontend './cert.bicep' = {
-//   name: 'CreateFeKvCert'
-//   params: {
-//     location: location
-//     akvName: keyVault.name
-//     certificateNameFE: 'frontendCertificate'
-//     certificateCommonNameFE: 'bicycle.${domainName}'
-//     certificateNameBE: 'backendCertificate'
-//     certificateCommonNameBE: '*.aks-ingress.${domainName}'
-//   }
-//   scope: resourceGroup(resourceGroupName)
-// }
+resource clusterLa 'Microsoft.OperationalInsights/workspaces@2021-06-01' existing = {
+  scope: resourceGroup(resourceGroupName)
+  name: logAnalyticsWorkspaceName
+}
 
 module nodeRgRbac '../CARML/Microsoft.Resources/resourceGroups/.bicep/nested_roleAssignments.bicep' = {
   name: '${nodeResourceGroupName}-rbac'
@@ -126,47 +108,6 @@ module nodeRgRbac '../CARML/Microsoft.Resources/resourceGroups/.bicep/nested_rol
     roleDefinitionIdOrName: 'Virtual Machine Contributor'
   }
 }
-module clusterLa '../CARML/Microsoft.OperationalInsights/workspaces/deploy.bicep' = {
-  name: logAnalyticsWorkspaceName
-  params: {
-    name: logAnalyticsWorkspaceName
-    location: location
-    serviceTier: 'PerGB2018'
-    dataRetention: 30
-    publicNetworkAccessForIngestion: 'Enabled'
-    publicNetworkAccessForQuery: 'Enabled'
-    // savedSearches: [
-    //   {
-    //     name: 'AllPrometheus'
-    //     category: 'Prometheus'
-    //     displayName: 'All collected Prometheus information'
-    //     query: 'InsightsMetrics | where Namespace == \'prometheus\''
-    //   }
-    //   {
-    //     name: 'NodeRebootRequested'
-    //     category: 'Prometheus'
-    //     displayName: 'Nodes reboot required by kured'
-    //     query: 'InsightsMetrics | where Namespace == \'prometheus\' and Name == \'kured_reboot_required\' | where Val > 0'
-    //   }
-    // ]
-    gallerySolutions: [
-      // {
-      //   name: 'ContainerInsights'
-      //   product: 'OMSGallery'
-      //   publisher: 'Microsoft'
-      // }
-      {
-        name: 'KeyVaultAnalytics'
-        product: 'OMSGallery'
-        publisher: 'Microsoft'
-      }
-    ]
-  }
-  scope: resourceGroup(resourceGroupName)
-  dependsOn: [
-    rg
-  ]
-}
 
 module clusterControlPlaneIdentity '../CARML/Microsoft.ManagedIdentity/userAssignedIdentities/deploy.bicep' = {
   name: clusterControlPlaneIdentityName
@@ -177,361 +118,6 @@ module clusterControlPlaneIdentity '../CARML/Microsoft.ManagedIdentity/userAssig
   scope: resourceGroup(resourceGroupName)
   dependsOn: [
     rg
-  ]
-}
-
-module mi_appgateway_frontend '../CARML/Microsoft.ManagedIdentity/userAssignedIdentities/deploy.bicep' = {
-  name: 'mi-appgateway-frontend'
-  params: {
-    name: 'mi-appgateway-frontend'
-    location: location
-  }
-  scope: resourceGroup(resourceGroupName)
-  dependsOn: [
-    rg
-  ]
-}
-
-module podmi_ingress_controller '../CARML/Microsoft.ManagedIdentity/userAssignedIdentities/deploy.bicep' = {
-  name: 'podmi-ingress-controller'
-  params: {
-    name: 'podmi-ingress-controller'
-    location: location
-  }
-  scope: resourceGroup(resourceGroupName)
-  dependsOn: [
-    rg
-  ]
-}
-
-module keyVault '../CARML/Microsoft.KeyVault/vaults/deploy.bicep' = {
-  name: keyVaultName
-  params: {
-    name: keyVaultName
-    location: location
-    accessPolicies: []
-    vaultSku: 'standard'
-    networkAcls: {
-      bypass: 'AzureServices'
-      defaultAction: 'Deny'
-      ipRules: []
-      virtualNetworkRules: []
-    }
-    enableRbacAuthorization: true
-    enableVaultForDeployment: false
-    enableVaultForDiskEncryption: false
-    enableVaultForTemplateDeployment: true
-    enableSoftDelete: true
-    diagnosticWorkspaceId: clusterLa.outputs.resourceId
-    secrets: {}
-    roleAssignments: [
-      {
-        roleDefinitionIdOrName: 'Key Vault Certificates Officer'
-        principalIds: [
-          mi_appgateway_frontend.outputs.principalId
-          podmi_ingress_controller.outputs.principalId
-        ]
-      }
-      {
-        roleDefinitionIdOrName: 'Key Vault Secrets User'
-        principalIds: [
-          mi_appgateway_frontend.outputs.principalId
-          podmi_ingress_controller.outputs.principalId
-        ]
-      }
-      {
-        roleDefinitionIdOrName: 'Key Vault Reader'
-        principalIds: [
-          mi_appgateway_frontend.outputs.principalId
-          podmi_ingress_controller.outputs.principalId
-        ]
-      }
-    ]
-    privateEndpoints: [
-      {
-        name: 'nodepools-to-akv'
-        subnetResourceId: vnetNodePoolSubnetResourceId
-        service: 'vault'
-        privateDnsZoneResourceIds: [
-          akvPrivateDnsZones.outputs.resourceId
-        ]
-      }
-    ]
-  }
-  scope: resourceGroup(resourceGroupName)
-  dependsOn: [
-    rg
-    mi_appgateway_frontend
-    podmi_ingress_controller
-  ]
-}
-
-module akvPrivateDnsZones '../CARML/Microsoft.Network/privateDnsZones/deploy.bicep' = {
-  name: akvPrivateDnsZonesName
-  params: {
-    name: akvPrivateDnsZonesName
-    location: 'global'
-    virtualNetworkLinks: [
-      {
-        name: 'to_${vnetName}'
-        virtualNetworkResourceId: targetVnetResourceId
-        registrationEnabled: false
-      }
-    ]
-  }
-  scope: resourceGroup(resourceGroupName)
-  dependsOn: [
-    rg
-  ]
-}
-
-module aksIngressDomain '../CARML/Microsoft.Network/privateDnsZones/deploy.bicep' = {
-  name: aksIngressDomainName
-  params: {
-    name: aksIngressDomainName
-    a: [
-      {
-        name: 'bu0001a0008-00'
-        ttl: 3600
-        aRecords: [
-          {
-            ipv4Address: '10.240.4.4'
-          }
-        ]
-      }
-    ]
-    location: 'global'
-    virtualNetworkLinks: [
-      {
-        name: 'to_${vnetName}'
-        virtualNetworkResourceId: targetVnetResourceId
-        registrationEnabled: false
-      }
-    ]
-  }
-  scope: resourceGroup(resourceGroupName)
-  dependsOn: [
-    rg
-  ]
-}
-
-module frontendCert '../CARML/Microsoft.KeyVault/vaults/secrets/deploy.bicep' = {
-  name: 'frontendCert'
-  params: {
-    value: appGatewayListenerCertificate
-    keyVaultName: keyVaultName
-    name: 'frontendCert'
-  }
-  scope: resourceGroup(resourceGroupName)
-  dependsOn: [
-    rg
-    keyVault
-  ]
-}
-
-module backendCert '../CARML/Microsoft.KeyVault/vaults/secrets/deploy.bicep' = {
-  name: 'backendCert'
-  params: {
-    value: aksIngressControllerCertificate
-    keyVaultName: keyVaultName
-    name: 'backendCert'
-  }
-  scope: resourceGroup(resourceGroupName)
-  dependsOn: [
-    rg
-    keyVault
-  ]
-}
-
-module wafPolicy '../CARML/Microsoft.Network/applicationGatewayWebApplicationFirewallPolicies/deploy.bicep' = {
-  name: 'waf-${clusterName}'
-  params: {
-    location: location
-    name:'waf-${clusterName}'
-    policySettings: {
-      fileUploadLimitInMb: 10
-      state: 'Enabled'
-      mode: 'Prevention'
-    }
-    managedRules: {
-      managedRuleSets: [
-        {
-            ruleSetType: 'OWASP'
-            ruleSetVersion: '3.2'
-            ruleGroupOverrides: []
-        }
-        {
-          ruleSetType: 'Microsoft_BotManagerRuleSet'
-          ruleSetVersion: '0.1'
-          ruleGroupOverrides: []
-        }
-      ]
-    }
-  }
-  scope: resourceGroup(resourceGroupName)
-}
-
-module agw '../CARML/Microsoft.Network/applicationGateways/deploy.bicep' = {
-  name: agwName
-  params: {
-    name: agwName
-    location: location
-    firewallPolicyId: wafPolicy.outputs.resourceId
-    userAssignedIdentities: {
-      '${mi_appgateway_frontend.outputs.resourceId}': {}
-    }
-    sku: 'WAF_v2'
-    trustedRootCertificates: [
-      {
-        name: 'root-cert-wildcard-aks-ingress'
-        properties: {
-          keyVaultSecretId: '${keyVault.outputs.uri}secrets/${backendCert.outputs.name}'
-        }
-      }
-    ]
-    gatewayIPConfigurations: [
-      {
-        name: 'apw-ip-configuration'
-        properties: {
-          subnet: {
-            id: '${targetVnetResourceId}/subnets/snet-applicationgateway'
-          }
-        }
-      }
-    ]
-    frontendIPConfigurations: [
-      {
-        name: 'apw-frontend-ip-configuration'
-        properties: {
-          publicIPAddress: {
-            id: '${subscription().id}/resourceGroups/${vNetResourceGroup}/providers/Microsoft.Network/publicIpAddresses/pip-BU0001A0008-00'
-          }
-        }
-      }
-    ]
-    frontendPorts: [
-      {
-        name: 'port-443'
-        properties: {
-          port: 443
-        }
-      }
-    ]
-    autoscaleMinCapacity: 0
-    autoscaleMaxCapacity: 10
-    webApplicationFirewallConfiguration: {
-      enabled: true
-      firewallMode: 'Prevention'
-      ruleSetType: 'OWASP'
-      ruleSetVersion: '3.2'
-      exclusions: []
-      fileUploadLimitInMb: 10
-      disabledRuleGroups: []
-    }
-    enableHttp2: false
-    sslCertificates: [
-      {
-        name: '${agwName}-ssl-certificate'
-        properties: {
-          keyVaultSecretId: '${keyVault.outputs.uri}secrets/${frontendCert.outputs.name}'
-        }
-      }
-    ]
-    probes: [
-      {
-        name: 'probe-${aksBackendDomainName}'
-        properties: {
-          protocol: 'Https'
-          path: '/'
-          interval: 30
-          timeout: 30
-          unhealthyThreshold: 3
-          pickHostNameFromBackendHttpSettings: true
-          minServers: 0
-          match: {}
-        }
-      }
-    ]
-    backendAddressPools: [
-      {
-        name: aksBackendDomainName
-        properties: {
-          backendAddresses: [
-            {
-              fqdn: aksBackendDomainName
-            }
-          ]
-        }
-      }
-    ]
-    backendHttpSettingsCollection: [
-      {
-        name: 'aks-ingress-backendpool-httpssettings'
-        properties: {
-          port: 443
-          protocol: 'Https'
-          cookieBasedAffinity: 'Disabled'
-          pickHostNameFromBackendAddress: true
-          requestTimeout: 20
-          probe: {
-            id: '${subscription().id}/resourceGroups/${resourceGroupName}/providers/Microsoft.Network/applicationGateways/${agwName}/probes/probe-${aksBackendDomainName}'
-          }
-          trustedRootCertificates: [
-            {
-              id: '${subscription().id}/resourceGroups/${resourceGroupName}/providers/Microsoft.Network/applicationGateways/${agwName}/trustedRootCertificates/root-cert-wildcard-aks-ingress'
-            }
-          ]
-        }
-      }
-    ]
-    httpListeners: [
-      {
-        name: 'listener-https'
-        properties: {
-          frontendIPConfiguration: {
-            id: '${subscription().id}/resourceGroups/${resourceGroupName}/providers/Microsoft.Network/applicationGateways/${agwName}/frontendIPConfigurations/apw-frontend-ip-configuration'
-          }
-          frontendPort: {
-            id: '${subscription().id}/resourceGroups/${resourceGroupName}/providers/Microsoft.Network/applicationGateways/${agwName}/frontendPorts/port-443'
-          }
-          protocol: 'Https'
-          sslCertificate: {
-            id: '${subscription().id}/resourceGroups/${resourceGroupName}/providers/Microsoft.Network/applicationGateways/${agwName}/sslCertificates/${agwName}-ssl-certificate'
-          }
-          hostName: 'bicycle.${domainName}'
-          hostNames: []
-          requireServerNameIndication: false
-        }
-      }
-    ]
-    requestRoutingRules: [
-      {
-        name: 'apw-routing-rules'
-        properties: {
-          ruleType: 'Basic'
-          priority: 100
-          httpListener: {
-            id: '${subscription().id}/resourceGroups/${resourceGroupName}/providers/Microsoft.Network/applicationGateways/${agwName}/httpListeners/listener-https'
-          }
-          backendAddressPool: {
-            id: '${subscription().id}/resourceGroups/${resourceGroupName}/providers/Microsoft.Network/applicationGateways/${agwName}/backendAddressPools/${aksBackendDomainName}'
-          }
-          backendHttpSettings: {
-            id: '${subscription().id}/resourceGroups/${resourceGroupName}/providers/Microsoft.Network/applicationGateways/${agwName}/backendHttpSettingsCollection/aks-ingress-backendpool-httpssettings'
-          }
-        }
-      }
-    ]
-    zones: pickZones('Microsoft.Network', 'applicationGateways', location, 3)
-    diagnosticWorkspaceId: clusterLa.outputs.resourceId
-  }
-  scope: resourceGroup(resourceGroupName)
-  dependsOn: [
-    rg
-    frontendCert
-    backendCert
-    keyVault
-    wafPolicy
   ]
 }
 
@@ -580,10 +166,10 @@ module PodFailedScheduledQuery '../CARML/Microsoft.Insights/scheduledQueryRules/
     enabled: true
     windowSize: 'PT10M'
     scopes: [
-      clusterLa.outputs.resourceId
+      clusterLa.id
     ]
     criterias: {
-      'allOf': [
+      allOf: [
         {
           query: '//https://docs.microsoft.com/azure/azure-monitor/insights/container-insights-alerts \r\n let endDateTime = now(); let startDateTime = ago(1h); let trendBinSize = 1m; let clusterName = "${clusterName}"; KubePodInventory | where TimeGenerated < endDateTime | where TimeGenerated >= startDateTime | where ClusterName == clusterName | distinct ClusterName, TimeGenerated | summarize ClusterSnapshotCount = count() by bin(TimeGenerated, trendBinSize), ClusterName | join hint.strategy=broadcast ( KubePodInventory | where TimeGenerated < endDateTime | where TimeGenerated >= startDateTime | distinct ClusterName, Computer, PodUid, TimeGenerated, PodStatus | summarize TotalCount = count(), PendingCount = sumif(1, PodStatus =~ "Pending"), RunningCount = sumif(1, PodStatus =~ "Running"), SucceededCount = sumif(1, PodStatus =~ "Succeeded"), FailedCount = sumif(1, PodStatus =~ "Failed") by ClusterName, bin(TimeGenerated, trendBinSize) ) on ClusterName, TimeGenerated | extend UnknownCount = TotalCount - PendingCount - RunningCount - SucceededCount - FailedCount | project TimeGenerated, TotalCount = todouble(TotalCount) / ClusterSnapshotCount, PendingCount = todouble(PendingCount) / ClusterSnapshotCount, RunningCount = todouble(RunningCount) / ClusterSnapshotCount, SucceededCount = todouble(SucceededCount) / ClusterSnapshotCount, FailedCount = todouble(FailedCount) / ClusterSnapshotCount, UnknownCount = todouble(UnknownCount) / ClusterSnapshotCount| summarize AggregatedValue = avg(FailedCount) by bin(TimeGenerated, trendBinSize)'
           timeAggregation: 'Average'
@@ -613,7 +199,7 @@ module AllAzureAdvisorAlert '../CARML/Microsoft.Insights/activityLogAlerts/deplo
     alertDescription: 'All azure advisor alerts'
     enabled: true
     scopes: [
-      rg.outputs.resourceId
+      rg.id
     ]
     conditions: [
       {
@@ -639,7 +225,7 @@ module cluster '../CARML/Microsoft.ContainerService/managedClusters/deploy.bicep
     location: location
     aksClusterSkuTier: 'Paid'
     aksClusterKubernetesVersion: kubernetesVersion
-    aksClusterDnsPrefix: uniqueString(subscription().subscriptionId, rg.outputs.name, clusterName)
+    aksClusterDnsPrefix: uniqueString(subscription().subscriptionId, rg.name, clusterName)
     primaryAgentPoolProfile: [
       {
         name: 'npsystem'
@@ -707,7 +293,7 @@ module cluster '../CARML/Microsoft.ContainerService/managedClusters/deploy.bicep
       clientId: 'msi'
     }
     httpApplicationRoutingEnabled: false
-    monitoringWorkspaceId: clusterLa.outputs.resourceId
+    monitoringWorkspaceId: clusterLa.id
     diagnosticLogCategoriesToEnable: [
       'cluster-autoscaler'
       'kube-controller-manager'
@@ -788,7 +374,7 @@ module cluster '../CARML/Microsoft.ContainerService/managedClusters/deploy.bicep
     userAssignedIdentities: {
       '${clusterControlPlaneIdentity.outputs.resourceId}': {}
     }
-    diagnosticWorkspaceId: clusterLa.outputs.resourceId
+    diagnosticWorkspaceId: clusterLa.id
     tags: {
       'Business unit': 'BU0001'
       'Application identifier': 'a0008'
@@ -940,7 +526,7 @@ module clusterSystemTopic '../CARML/Microsoft.EventGrid/systemTopics/deploy.bice
     location: location
     source: cluster.outputs.resourceId
     topicType: 'Microsoft.ContainerService.ManagedClusters'
-    diagnosticWorkspaceId: clusterLa.outputs.resourceId
+    diagnosticWorkspaceId: clusterLa.id
   }
   scope: resourceGroup(resourceGroupName)
   dependsOn: [
@@ -1700,5 +1286,3 @@ module EnforceImageSource '../CARML/Microsoft.Authorization/policyAssignments/re
 }
 
 output aksClusterName string = clusterName
-output aksIngressControllerPodManagedIdentityResourceId string = podmi_ingress_controller.outputs.resourceId
-output keyVaultName string = keyVaultName

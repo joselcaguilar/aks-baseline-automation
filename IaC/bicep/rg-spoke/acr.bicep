@@ -71,6 +71,8 @@ param geoRedundancyLocation string = 'centralus'
 /*** VARIABLES ***/
 
 var subRgUniqueString = uniqueString('aks', subscription().subscriptionId, resourceGroupName, location)
+var clusterName = 'aks-${subRgUniqueString}'
+var logAnalyticsWorkspaceName = 'la-${clusterName}'
 
 /*** EXISTING RESOURCES ***/
 
@@ -90,27 +92,13 @@ resource spokeVirtualNetwork 'Microsoft.Network/virtualNetworks@2021-05-01' exis
 
 /*** RESOURCES ***/
 
-module rg '../CARML/Microsoft.Resources/resourceGroups/deploy.bicep' = {
+resource rg 'Microsoft.Resources/resourceGroups@2019-05-01' existing = {
   name: resourceGroupName
-  params: {
-    name: resourceGroupName
-    location: location
-  }
 }
 
-// This Log Analytics workspace will be the log sink for all resources in the cluster resource group. This includes ACR, the AKS cluster, Key Vault, etc. It also is the Container Insights log sink for the AKS cluster.
-module laAks '../CARML/Microsoft.OperationalInsights/workspaces/deploy.bicep' = {
-  name: 'la-aks-${subRgUniqueString}'
-  params: {
-    name: 'la-aks-${subRgUniqueString}'
-    location: location
-    serviceTier: 'PerGB2018'
-    dataRetention: 30
-  }
+resource laAks 'Microsoft.OperationalInsights/workspaces@2021-06-01' existing = {
   scope: resourceGroup(resourceGroupName)
-  dependsOn: [
-    rg
-  ]
+  name: logAnalyticsWorkspaceName
 }
 
 // Azure Container Registry will be exposed via Private Link, set up the related Private DNS zone and virtual network link to the spoke.
@@ -157,7 +145,7 @@ module acrAks '../CARML/Microsoft.ContainerRegistry/registries/deploy.bicep' = {
         location: geoRedundancyLocation
       }
     ]
-    diagnosticWorkspaceId: laAks.outputs.resourceId
+    diagnosticWorkspaceId: laAks.id
     // unfortunately deploying the endpoint here will fail for the first run
     // privateEndpoints: [
     //   {
