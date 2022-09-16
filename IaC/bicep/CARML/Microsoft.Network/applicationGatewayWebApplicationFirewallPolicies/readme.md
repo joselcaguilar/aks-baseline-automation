@@ -1,4 +1,4 @@
-#  `[]`
+# `[Microsoft.Network/applicationGatewayWebApplicationFirewallPolicies]`
 
 This module deploys .
 // TODO: Replace Resource and fill in description
@@ -9,6 +9,7 @@ This module deploys .
 - [Parameters](#Parameters)
 - [Outputs](#Outputs)
 - [Cross-referenced modules](#Cross-referenced-modules)
+- [Deployment examples](#Deployment-examples)
 
 ## Resource Types
 
@@ -91,3 +92,93 @@ tags: {
 ## Cross-referenced modules
 
 _None_
+
+## Deployment examples
+
+The following module usage examples are retrieved from the content of the files hosted in the module's `.test` folder.
+   >**Note**: The name of each example is based on the name of the file from which it is taken.
+
+   >**Note**: Each example lists all the required parameters first, followed by the rest - each in alphabetical order.
+
+<h3>Example 1: Parameters</h3>
+
+<details>
+
+<summary>via Bicep module</summary>
+
+```bicep
+module applicationGatewayWebApplicationFirewallPolicies './Microsoft.Network/applicationGatewayWebApplicationFirewallPolicies/deploy.bicep' = {
+  name: '${uniqueString(deployment().name)}-ApplicationGatewayWebApplicationFirewallPolicies'
+  params: {
+    // Required parameters
+    name: '<<namePrefix>>-az-apgwpolicy-x-001'
+    // Non-required parameters
+    managedRules: {
+      managedRuleSets: [
+        {
+          ruleGroupOverrides: []
+          ruleSetType: 'OWASP'
+          ruleSetVersion: '3.2'
+        }
+        {
+          ruleGroupOverrides: []
+          ruleSetType: 'Microsoft_BotManagerRuleSet'
+          ruleSetVersion: '0.1'
+        }
+      ]
+    }
+    policySettings: {
+      fileUploadLimitInMb: 10
+      mode: 'Prevention'
+      state: 'Enabled'
+    }
+  }
+}
+```
+
+</details>
+<p>
+
+<details>
+
+<summary>via JSON Parameter file</summary>
+
+```json
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    // Required parameters
+    "name": {
+      "value": "<<namePrefix>>-az-apgwpolicy-x-001"
+    },
+    // Non-required parameters
+    "managedRules": {
+      "value": {
+        "managedRuleSets": [
+          {
+            "ruleGroupOverrides": [],
+            "ruleSetType": "OWASP",
+            "ruleSetVersion": "3.2"
+          },
+          {
+            "ruleGroupOverrides": [],
+            "ruleSetType": "Microsoft_BotManagerRuleSet",
+            "ruleSetVersion": "0.1"
+          }
+        ]
+      }
+    },
+    "policySettings": {
+      "value": {
+        "fileUploadLimitInMb": 10,
+        "mode": "Prevention",
+        "state": "Enabled"
+      }
+    }
+  }
+}
+```
+
+</details>
+<p>
