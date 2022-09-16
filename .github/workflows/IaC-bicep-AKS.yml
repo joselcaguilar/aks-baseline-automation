@@ -14,11 +14,11 @@ on:
       clusterAdminAadGroupObjectId:
         description: 'K8S Admin Azure AAD Group ObjectID'
         required: true
-        type: string
+        type: text
       a0008NamespaceReaderAadGroupObjectId:
         description: 'K8S Reader Azure AAD Group ObjectID'
         required: true
-        type: string
+        type: text
 
 env:
   event_sha: +refs/pull/${{ github.event.issue.number }}/merge
