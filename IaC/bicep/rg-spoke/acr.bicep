@@ -92,8 +92,12 @@ resource spokeVirtualNetwork 'Microsoft.Network/virtualNetworks@2021-05-01' exis
 
 /*** RESOURCES ***/
 
-resource rg 'Microsoft.Resources/resourceGroups@2019-05-01' existing = {
+module rg '../CARML/Microsoft.Resources/resourceGroups/deploy.bicep' = {
   name: resourceGroupName
+  params: {
+    name: resourceGroupName
+    location: location
+  }
 }
 
 resource laAks 'Microsoft.OperationalInsights/workspaces@2021-06-01' existing = {
